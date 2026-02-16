@@ -7,7 +7,6 @@ import (
 	"github.com/fosrl/cli/internal/api"
 	"github.com/fosrl/cli/internal/config"
 	"github.com/fosrl/cli/internal/logger"
-	"github.com/fosrl/cli/internal/sshkeys"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +28,7 @@ func SSHCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ssh",
 		Short: "Run an interactive SSH session",
-		Long:  `Run an SSH client in the terminal. Generates a key pair and signs it just-in-time via the API, then connects. By default uses the built-in Go SSH client; use --exec to run the system ssh binary instead.`,
+		Long:  `Run an SSH client in the terminal. Generates a key pair and signs it just-in-time, then connects to the target resource.`,
 		PreRunE: func(c *cobra.Command, args []string) error {
 			if opts.Hostname == "" {
 				return errHostnameRequired
@@ -43,32 +42,15 @@ func SSHCmd() *cobra.Command {
 			apiClient := api.FromContext(c.Context())
 			accountStore := config.AccountStoreFromContext(c.Context())
 
-			orgID := opts.OrgID
-			if orgID == "" {
-				active, err := accountStore.ActiveAccount()
-				if err != nil || active == nil {
-					logger.Error("%v", errOrgRequired)
-					os.Exit(1)
-				}
-				orgID = active.OrgID
-				if orgID == "" {
-					logger.Error("%v", errOrgRequired)
-					os.Exit(1)
-				}
-			}
-
-			privPEM, pubKey, err := sshkeys.GenerateKeyPair()
+			orgID, err := ResolveOrgID(accountStore, opts.OrgID)
 			if err != nil {
-				logger.Error("generate key pair: %v", err)
+				logger.Error("%v", err)
 				os.Exit(1)
 			}
 
-			signData, err := apiClient.SignSSHKey(orgID, api.SignSSHKeyRequest{
-				PublicKey:  pubKey,
-				ResourceID: opts.ResourceID,
-			})
+			privPEM, _, cert, _, err := GenerateAndSignKey(apiClient, orgID, opts.ResourceID)
 			if err != nil {
-				logger.Error("sign SSH key: %v", err)
+				logger.Error("%v", err)
 				os.Exit(1)
 			}
 
@@ -76,7 +58,7 @@ func SSHCmd() *cobra.Command {
 				User:          opts.User,
 				Hostname:      opts.Hostname,
 				PrivateKeyPEM: privPEM,
-				Certificate:   signData.Certificate,
+				Certificate:   cert,
 				PassThrough:   args,
 			}
 
@@ -101,6 +83,8 @@ func SSHCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.Exec, "exec", false, "Use system ssh binary instead of the built-in client")
 
 	cmd.Args = cobra.ArbitraryArgs
+
+	cmd.AddCommand(SignCmd())
 
 	return cmd
 }
