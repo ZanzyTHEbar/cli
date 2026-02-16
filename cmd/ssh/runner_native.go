@@ -1,0 +1,137 @@
+package ssh
+
+import (
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"os/signal"
+	"runtime"
+	"syscall"
+
+	"github.com/mattn/go-isatty"
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/term"
+)
+
+const nativeDefaultSSHPort = "22"
+
+// RunNative runs an interactive SSH session using the pure-Go client (golang.org/x/crypto/ssh).
+// It does not use the system ssh binary. Requires opts.Identity to be set (validated by caller).
+func RunNative(opts RunOpts) (int, error) {
+	addr, err := nativeSSHAddress(opts.Hostname)
+	if err != nil {
+		return 1, err
+	}
+
+	config, err := nativeSSHClientConfig(opts)
+	if err != nil {
+		return 1, err
+	}
+
+	client, err := ssh.Dial("tcp", addr, config)
+	if err != nil {
+		return 1, fmt.Errorf("ssh dial: %w", err)
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return 1, fmt.Errorf("ssh session: %w", err)
+	}
+	defer session.Close()
+
+	stdinFd := int(os.Stdin.Fd())
+	useRaw := isatty.IsTerminal(uintptr(stdinFd)) && runtime.GOOS != "windows"
+	if useRaw {
+		oldState, err := term.MakeRaw(stdinFd)
+		if err != nil {
+			return 1, err
+		}
+		defer func() { _ = term.Restore(stdinFd, oldState) }()
+	}
+
+	width, height := 80, 24
+	if useRaw {
+		if w, h, err := term.GetSize(stdinFd); err == nil {
+			width, height = w, h
+		}
+	}
+
+	modes := ssh.TerminalModes{
+		ssh.ECHO:          1,
+		ssh.TTY_OP_ISPEED: 14400,
+		ssh.TTY_OP_OSPEED: 14400,
+	}
+	if err := session.RequestPty("xterm-256color", height, width, modes); err != nil {
+		return 1, fmt.Errorf("request pty: %w", err)
+	}
+
+	// Resize on SIGWINCH (Unix, TTY only)
+	if useRaw {
+		winchCh := make(chan os.Signal, 1)
+		signal.Notify(winchCh, syscall.SIGWINCH)
+		go func() {
+			for range winchCh {
+				if w, h, err := term.GetSize(stdinFd); err == nil {
+					_ = session.WindowChange(h, w)
+				}
+			}
+		}()
+		defer signal.Stop(winchCh)
+		winchCh <- syscall.SIGWINCH
+	}
+
+	session.Stdin = os.Stdin
+	session.Stdout = os.Stdout
+	session.Stderr = os.Stderr
+
+	if err := session.Shell(); err != nil {
+		return 1, fmt.Errorf("shell: %w", err)
+	}
+
+	if err := session.Wait(); err != nil {
+		// Session ended with an error (e.g. exit 1 on remote). No numeric code in protocol.
+		return 1, nil
+	}
+	return 0, nil
+}
+
+func nativeSSHAddress(hostname string) (string, error) {
+	if hostname == "" {
+		return "", errors.New("hostname is empty")
+	}
+	if _, _, err := net.SplitHostPort(hostname); err == nil {
+		return hostname, nil
+	}
+	return net.JoinHostPort(hostname, nativeDefaultSSHPort), nil
+}
+
+func nativeSSHClientConfig(opts RunOpts) (*ssh.ClientConfig, error) {
+	key, err := os.ReadFile(opts.Identity)
+	if err != nil {
+		return nil, fmt.Errorf("read identity file: %w", err)
+	}
+	signer, err := ssh.ParsePrivateKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("parse private key: %w", err)
+	}
+
+	user := opts.User
+	if user == "" {
+		user = os.Getenv("USER")
+		if user == "" {
+			user = os.Getenv("USERNAME")
+		}
+		if user == "" {
+			user = "root"
+		}
+	}
+
+	return &ssh.ClientConfig{
+		User: user,
+		Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		// Host key verification disabled for simplicity; can be enhanced with known_hosts later.
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}, nil
+}

@@ -14,18 +14,18 @@ import (
 	"golang.org/x/term"
 )
 
-// sshSearchPaths are fallback locations for the ssh executable when not in PATH.
-var sshSearchPaths = []string{
+// execSSHSearchPaths are fallback locations for the ssh executable when not in PATH.
+var execSSHSearchPaths = []string{
 	"/usr/bin/ssh",
 	"/usr/local/bin/ssh",
 	`C:\Windows\System32\OpenSSH\ssh.exe`,
 }
 
-func findSSHPath() (string, error) {
+func findExecSSHPath() (string, error) {
 	if path, err := exec.LookPath("ssh"); err == nil {
 		return path, nil
 	}
-	for _, p := range sshSearchPaths {
+	for _, p := range execSSHSearchPaths {
 		if isExecutable(p) {
 			return p, nil
 		}
@@ -44,7 +44,7 @@ func isExecutable(path string) bool {
 	return info.Mode()&0o111 != 0
 }
 
-func exitCodeFromError(err error) int {
+func execExitCode(err error) int {
 	if err == nil {
 		return 0
 	}
@@ -54,6 +54,7 @@ func exitCodeFromError(err error) int {
 	return 1
 }
 
+// RunOpts is shared by both the exec and native SSH runners.
 type RunOpts struct {
 	User        string
 	Hostname    string
@@ -61,26 +62,26 @@ type RunOpts struct {
 	PassThrough []string
 }
 
-// Run builds the ssh command from opts, runs it (with a PTY when stdin is a terminal on Unix),
-// and returns the exit code and any error from starting/waiting.
-func Run(opts RunOpts) (int, error) {
-	sshPath, err := findSSHPath()
+// RunExec runs an interactive SSH session by executing the system ssh binary
+// (with a PTY when stdin is a terminal on Unix). Requires ssh to be installed.
+func RunExec(opts RunOpts) (int, error) {
+	sshPath, err := findExecSSHPath()
 	if err != nil {
 		return 1, err
 	}
 
-	argv := buildSSHArgs(sshPath, opts)
+	argv := buildExecSSHArgs(sshPath, opts)
 	cmd := exec.Command(argv[0], argv[1:]...)
 
 	usePTY := runtime.GOOS != "windows" && isatty.IsTerminal(os.Stdin.Fd())
 
 	if usePTY {
-		return runWithPTY(cmd)
+		return runExecWithPTY(cmd)
 	}
-	return runWithoutPTY(cmd)
+	return runExecWithoutPTY(cmd)
 }
 
-func buildSSHArgs(sshPath string, opts RunOpts) []string {
+func buildExecSSHArgs(sshPath string, opts RunOpts) []string {
 	args := []string{sshPath}
 	if opts.User != "" {
 		args = append(args, "-l", opts.User)
@@ -93,7 +94,7 @@ func buildSSHArgs(sshPath string, opts RunOpts) []string {
 	return args
 }
 
-func runWithPTY(cmd *exec.Cmd) (int, error) {
+func runExecWithPTY(cmd *exec.Cmd) (int, error) {
 	// Put local terminal in raw mode so Ctrl+C and Tab are sent as bytes to the
 	// remote instead of triggering SIGINT or local completion.
 	stdinFd := int(os.Stdin.Fd())
@@ -144,17 +145,17 @@ func runWithPTY(cmd *exec.Cmd) (int, error) {
 	_, _ = io.Copy(os.Stdout, ptmx)
 
 	if err := cmd.Wait(); err != nil {
-		return exitCodeFromError(err), nil
+		return execExitCode(err), nil
 	}
 	return 0, nil
 }
 
-func runWithoutPTY(cmd *exec.Cmd) (int, error) {
+func runExecWithoutPTY(cmd *exec.Cmd) (int, error) {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return exitCodeFromError(err), nil
+		return execExitCode(err), nil
 	}
 	return 0, nil
 }
