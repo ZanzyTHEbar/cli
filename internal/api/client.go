@@ -360,17 +360,14 @@ func (c *Client) CheckOrgUserAccess(orgID, userID string) (*CheckOrgUserAccessRe
 	return &response, nil
 }
 
+// SignSSHKey signs an SSH public key for the given org and resource.
 func (c *Client) SignSSHKey(orgID string, req SignSSHKeyRequest) (*SignSSHKeyData, error) {
 	path := fmt.Sprintf("/org/%s/ssh/sign-key", orgID)
-	var response SignSSHKeyResponse
-	err := c.Post(path, req, &response)
-	if err != nil {
+	var data SignSSHKeyData
+	if err := c.Post(path, req, &data); err != nil {
 		return nil, err
 	}
-	if !response.Success {
-		return nil, fmt.Errorf("ssh sign-key failed")
-	}
-	return &response.Data, nil
+	return &data, nil
 }
 
 // GetClient gets a client by ID

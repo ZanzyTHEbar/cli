@@ -275,8 +275,8 @@ type ApplyBlueprintResponse struct {
 }
 
 type SignSSHKeyRequest struct {
-	PublicKey  string `json:"publicKey"`
-	ResourceID int    `json:"resourceId"`
+	PublicKey string `json:"publicKey"`
+	Resource  string `json:"resource"`
 }
 
 type SignSSHKeyData struct {
@@ -286,11 +286,12 @@ type SignSSHKeyData struct {
 	ValidAfter       string   `json:"validAfter"`
 	ValidBefore      string   `json:"validBefore"`
 	ExpiresInSeconds int      `json:"expiresIn"`
-	Hostname         string   `json:"hostname"` // hostname for SSH connection (returned by API)
-	User             string   `json:"user"`     // user for SSH connection (returned by API)
+	Hostname         string   `json:"sshHost"`     // hostname for SSH connection (returned by API)
+	User             string   `json:"sshUsername"` // user for SSH connection (returned by API)
 }
 
 type SignSSHKeyResponse struct {
 	Success bool           `json:"success"`
+	Error   *string        `json:"error,omitempty"`
 	Data    SignSSHKeyData `json:"data"`
 }

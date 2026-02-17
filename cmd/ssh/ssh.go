@@ -12,32 +12,32 @@ import (
 
 var (
 	errHostnameRequired   = errors.New("API did not return a hostname for the connection")
-	errResourceIDRequired = errors.New("--resource-id is required to sign the SSH key")
-	errOrgRequired        = errors.New("--org is required, or select an organization (pangolin select org)")
+	errResourceIDRequired = errors.New("resource (alias or identifier) is required")
+	errOrgRequired        = errors.New("organization is required")
 )
 
 func SSHCmd() *cobra.Command {
 	opts := struct {
-		OrgID      string
-		ResourceID int
+		ResourceID string
 		Exec       bool
 	}{}
 
 	cmd := &cobra.Command{
-		Use:   "ssh",
+		Use:   "ssh <resource alias or identifier> [-- passthrough...]",
 		Short: "Run an interactive SSH session",
 		Long:  `Run an SSH client in the terminal. Generates a key pair and signs it just-in-time, then connects to the target resource.`,
 		PreRunE: func(c *cobra.Command, args []string) error {
-			if opts.ResourceID == 0 {
+			if len(args) < 1 || args[0] == "" {
 				return errResourceIDRequired
 			}
+			opts.ResourceID = args[0]
 			return nil
 		},
 		Run: func(c *cobra.Command, args []string) {
 			apiClient := api.FromContext(c.Context())
 			accountStore := config.AccountStoreFromContext(c.Context())
 
-			orgID, err := ResolveOrgID(accountStore, opts.OrgID)
+			orgID, err := ResolveOrgID(accountStore, "")
 			if err != nil {
 				logger.Error("%v", err)
 				os.Exit(1)
@@ -53,12 +53,13 @@ func SSHCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
+			passThrough := args[1:]
 			runOpts := RunOpts{
 				User:          signData.User,
 				Hostname:      signData.Hostname,
 				PrivateKeyPEM: privPEM,
 				Certificate:   cert,
-				PassThrough:   args,
+				PassThrough:   passThrough,
 			}
 
 			var exitCode int
@@ -75,12 +76,9 @@ func SSHCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.OrgID, "org", "", "Organization ID (default: selected organization)")
-	cmd.Flags().IntVar(&opts.ResourceID, "resource-id", 0, "Resource ID for key signing (required)")
-	// Temporarily disable the exec flag to avoid confusion.
-	// cmd.Flags().BoolVar(&opts.Exec, "exec", false, "Use system ssh binary instead of the built-in client")
+	cmd.Flags().BoolVar(&opts.Exec, "exec", false, "Use system ssh binary instead of the built-in client")
 
-	cmd.Args = cobra.ArbitraryArgs
+	cmd.Args = cobra.MinimumNArgs(1)
 
 	cmd.AddCommand(SignCmd())
 

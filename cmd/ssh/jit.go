@@ -10,15 +10,15 @@ import (
 
 // GenerateAndSignKey generates an Ed25519 key pair and signs the public key via the API.
 // Returns private key (PEM), public key (authorized_keys line), certificate, and sign response data. No files are written.
-func GenerateAndSignKey(client *api.Client, orgID string, resourceID int) (privPEM, pubKey, cert string, signData *api.SignSSHKeyData, err error) {
+func GenerateAndSignKey(client *api.Client, orgID string, resourceID string) (privPEM, pubKey, cert string, signData *api.SignSSHKeyData, err error) {
 	privPEM, pubKey, err = sshkeys.GenerateKeyPair()
 	if err != nil {
 		return "", "", "", nil, fmt.Errorf("generate key pair: %w", err)
 	}
 
 	data, err := client.SignSSHKey(orgID, api.SignSSHKeyRequest{
-		PublicKey:  pubKey,
-		ResourceID: resourceID,
+		PublicKey: pubKey,
+		Resource:  resourceID,
 	})
 	if err != nil {
 		return "", "", "", nil, fmt.Errorf("sign SSH key: %w", err)

@@ -19,30 +19,30 @@ var errKeyFileRequired = errors.New("--key-file is required")
 
 func SignCmd() *cobra.Command {
 	opts := struct {
-		OrgID      string
-		ResourceID int
+		ResourceID string
 		KeyFile    string
 		CertFile   string
 	}{}
 
 	cmd := &cobra.Command{
-		Use:   "sign",
+		Use:   "sign <resource-id>",
 		Short: "Generate and sign an SSH key, then save to files for use with system SSH.",
 		Long:  `Generates a key pair, signs the public key, and writes the private key and certificate to files.`,
 		PreRunE: func(c *cobra.Command, args []string) error {
 			if opts.KeyFile == "" {
 				return errKeyFileRequired
 			}
-			if opts.ResourceID == 0 {
+			if len(args) < 1 || args[0] == "" {
 				return errResourceIDRequired
 			}
+			opts.ResourceID = args[0]
 			return nil
 		},
 		Run: func(c *cobra.Command, args []string) {
 			apiClient := api.FromContext(c.Context())
 			accountStore := config.AccountStoreFromContext(c.Context())
 
-			orgID, err := ResolveOrgID(accountStore, opts.OrgID)
+			orgID, err := ResolveOrgID(accountStore, "")
 			if err != nil {
 				logger.Error("%v", err)
 				os.Exit(1)
@@ -100,9 +100,8 @@ func SignCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.OrgID, "org", "", "Organization ID (default: selected organization)")
-	cmd.Flags().IntVar(&opts.ResourceID, "resource-id", 0, "Resource ID for key signing (required)")
 	cmd.Flags().StringVar(&opts.KeyFile, "key-file", "", "Path to write the private key (required)")
+	cmd.Args = cobra.ExactArgs(1)
 	cmd.Flags().StringVar(&opts.CertFile, "cert-file", "", "Path to write the certificate (default: <key-file>-cert.pub)")
 
 	return cmd
