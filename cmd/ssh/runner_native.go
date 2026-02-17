@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -20,7 +21,7 @@ const nativeDefaultSSHPort = "22"
 // RunNative runs an interactive SSH session using the pure-Go client (golang.org/x/crypto/ssh).
 // It does not use the system ssh binary. opts.PrivateKeyPEM and opts.Certificate must be set (JIT key + signed cert).
 func RunNative(opts RunOpts) (int, error) {
-	addr, err := nativeSSHAddress(opts.Hostname)
+	addr, err := nativeSSHAddress(opts.Hostname, opts.Port)
 	if err != nil {
 		return 1, err
 	}
@@ -104,9 +105,16 @@ func looksLikeCertificate(data []byte) bool {
 		strings.Contains(s, "ssh-rsa-cert") || strings.Contains(s, "ssh-ed25519-cert") || strings.Contains(s, "ecdsa-sha2-nistp256-cert")
 }
 
-func nativeSSHAddress(hostname string) (string, error) {
+func nativeSSHAddress(hostname string, port int) (string, error) {
 	if hostname == "" {
 		return "", errors.New("hostname is empty")
+	}
+	host := hostname
+	if port > 0 {
+		if h, _, err := net.SplitHostPort(hostname); err == nil {
+			host = h
+		}
+		return net.JoinHostPort(host, strconv.Itoa(port)), nil
 	}
 	if _, _, err := net.SplitHostPort(hostname); err == nil {
 		return hostname, nil

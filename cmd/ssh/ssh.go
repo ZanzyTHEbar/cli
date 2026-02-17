@@ -20,6 +20,7 @@ func SSHCmd() *cobra.Command {
 	opts := struct {
 		ResourceID string
 		Exec       bool
+		Port       int
 	}{}
 
 	cmd := &cobra.Command{
@@ -57,6 +58,7 @@ func SSHCmd() *cobra.Command {
 			runOpts := RunOpts{
 				User:          signData.User,
 				Hostname:      signData.Hostname,
+				Port:          opts.Port,
 				PrivateKeyPEM: privPEM,
 				Certificate:   cert,
 				PassThrough:   passThrough,
@@ -77,6 +79,7 @@ func SSHCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&opts.Exec, "exec", false, "Use system ssh binary instead of the built-in client")
+	cmd.Flags().IntVarP(&opts.Port, "port", "p", 0, "SSH port (default: 22)")
 
 	cmd.Args = cobra.MinimumNArgs(1)
 

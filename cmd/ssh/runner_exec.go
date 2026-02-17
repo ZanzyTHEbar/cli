@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"syscall"
 
 	"github.com/creack/pty"
@@ -56,9 +57,11 @@ func execExitCode(err error) int {
 
 // RunOpts is shared by both the exec and native SSH runners.
 // PrivateKeyPEM and Certificate are set just-in-time (JIT) before connect; no file paths.
+// Port is optional: 0 means use default (22 or whatever is in Hostname); >0 overrides.
 type RunOpts struct {
 	User          string
 	Hostname      string
+	Port          int    // optional; 0 = default
 	PrivateKeyPEM string // in-memory private key (PEM, OpenSSH format)
 	Certificate   string // in-memory certificate from sign-key API
 	PassThrough   []string
@@ -81,7 +84,7 @@ func RunExec(opts RunOpts) (int, error) {
 		defer cleanup()
 	}
 
-	argv := buildExecSSHArgs(sshPath, opts.User, opts.Hostname, keyPath, certPath, opts.PassThrough)
+	argv := buildExecSSHArgs(sshPath, opts.User, opts.Hostname, opts.Port, keyPath, certPath, opts.PassThrough)
 	cmd := exec.Command(argv[0], argv[1:]...)
 
 	usePTY := runtime.GOOS != "windows" && isatty.IsTerminal(os.Stdin.Fd())
@@ -147,7 +150,7 @@ func writeExecKeyFiles(opts RunOpts) (keyPath, certPath string, cleanup func(), 
 	return keyPath, certPath, cleanup, nil
 }
 
-func buildExecSSHArgs(sshPath, user, hostname, keyPath, certPath string, passThrough []string) []string {
+func buildExecSSHArgs(sshPath, user, hostname string, port int, keyPath, certPath string, passThrough []string) []string {
 	args := []string{sshPath}
 	if user != "" {
 		args = append(args, "-l", user)
@@ -157,6 +160,9 @@ func buildExecSSHArgs(sshPath, user, hostname, keyPath, certPath string, passThr
 	}
 	if certPath != "" {
 		args = append(args, "-o", "CertificateFile="+certPath)
+	}
+	if port > 0 {
+		args = append(args, "-p", strconv.Itoa(port))
 	}
 	args = append(args, hostname)
 	args = append(args, passThrough...)
