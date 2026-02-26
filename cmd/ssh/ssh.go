@@ -13,10 +13,10 @@ import (
 )
 
 var (
-	errHostnameRequired   = errors.New("API did not return a hostname for the connection")
-	errResourceIDRequired = errors.New("Resource (alias or identifier) is required")
-	errOrgRequired        = errors.New("Organization is required")
-	errNoClientRunning    = errors.New("No client is currently running. Start the client first with `pangolin up`")
+	errHostnameRequired       = errors.New("API did not return a hostname for the connection")
+	errResourceIDRequired     = errors.New("Resource (alias or identifier) is required")
+	errOrgRequired            = errors.New("Organization is required")
+	errNoClientRunning        = errors.New("No client is currently running. Start the client first with `pangolin up`")
 	errNoClientRunningWindows = errors.New("No client is currently running. Start the client first in the system tray")
 )
 
@@ -28,7 +28,7 @@ func SSHCmd() *cobra.Command {
 	}{}
 
 	cmd := &cobra.Command{
-		Use:   "ssh <resource alias or identifier> [-- passthrough...]",
+		Use:   "ssh <resource alias or identifier>",
 		Short: "Run an interactive SSH session",
 		Long:  `Run an SSH client in the terminal. Generates a key pair and signs it just-in-time, then connects to the target resource.`,
 		PreRunE: func(c *cobra.Command, args []string) error {
@@ -87,6 +87,9 @@ func SSHCmd() *cobra.Command {
 
 			// On Windows, use the system ssh binary by default (better terminal/agent support).
 			useExec := opts.Exec || runtime.GOOS == "windows"
+			if len(passThrough) > 0 && !useExec {
+				logger.Warning("Passthrough arguments are ignored by the built-in client. Use --exec to pass them to the system ssh.")
+			}
 			var exitCode int
 			if useExec {
 				exitCode, err = RunExec(runOpts)
