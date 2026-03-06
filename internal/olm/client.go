@@ -68,8 +68,8 @@ type SwitchOrgResponse struct {
 // JITConnectionRequest represents a Just-In-Time connection request.
 // Exactly one of SiteID or ResourceID must be set.
 type JITConnectionRequest struct {
-	SiteID     string `json:"siteId,omitempty"`
-	ResourceID string `json:"resourceId,omitempty"`
+	Site     string `json:"site,omitempty"`
+	Resource string `json:"resource,omitempty"`
 }
 
 // JITConnectionResponse represents the response from a JIT connection request
@@ -209,7 +209,7 @@ func (c *Client) JITConnectBySiteID(siteID string) (*JITConnectionResponse, erro
 	if siteID == "" {
 		return nil, fmt.Errorf("siteID must not be empty")
 	}
-	return c.jitConnect(JITConnectionRequest{SiteID: siteID})
+	return c.jitConnect(JITConnectionRequest{Site: siteID})
 }
 
 // JITConnectByResourceID initiates a dynamic Just-In-Time connection to the site
@@ -218,7 +218,7 @@ func (c *Client) JITConnectByResourceID(resourceID string) (*JITConnectionRespon
 	if resourceID == "" {
 		return nil, fmt.Errorf("resourceID must not be empty")
 	}
-	return c.jitConnect(JITConnectionRequest{ResourceID: resourceID})
+	return c.jitConnect(JITConnectionRequest{Resource: resourceID})
 }
 
 // IsRunning checks if the OLM process is running by checking if the socket exists

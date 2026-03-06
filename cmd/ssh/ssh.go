@@ -70,14 +70,17 @@ func SSHCmd() *cobra.Command {
 				os.Exit(1)
 			}
 			
+			// logger.Info("signData: %+v", signData)
+			
 			if signData.SiteID != 0 { // older versions of the server did not send back the site id so we need to check for backward compatibility
-				deadline := time.Now().Add(7 * time.Second)
+				deadline := time.Now().Add(15 * time.Second)
 				connected := false
 				for time.Now().Before(deadline) {
 					status, err := client.GetStatus()
 					if err == nil {
 						if peer, ok := status.PeerStatuses[signData.SiteID]; ok && peer.Connected {
 							connected = true
+							// logger.Info("site is connected")
 							break
 						}
 					}
