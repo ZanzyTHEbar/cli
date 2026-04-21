@@ -2,6 +2,7 @@ package blueprint
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,8 +14,11 @@ import (
 )
 
 type BlueprintCmdOpts struct {
-	Name string
-	Path string
+	Name     string
+	Path     string
+	APIKey   string
+	Endpoint string
+	OrgID    string
 }
 
 func BlueprintCmd() *cobra.Command {
@@ -29,6 +33,17 @@ func BlueprintCmd() *cobra.Command {
 				return errors.New("--file is required")
 			}
 
+			// API key mode requires endpoint and org.
+			if opts.APIKey != "" && opts.Endpoint == "" {
+				return errors.New("--endpoint is required when using --api-key (use your Integration API URL, e.g. https://<host>/v1)")
+			}
+			if opts.APIKey != "" && opts.OrgID == "" {
+				return errors.New("--org is required when using --api-key")
+			}
+			if opts.APIKey == "" && opts.OrgID != "" {
+				return errors.New("--org is only supported when using --api-key")
+			}
+
 			if _, err := os.Stat(opts.Path); err != nil {
 				return err
 			}
@@ -36,11 +51,10 @@ func BlueprintCmd() *cobra.Command {
 			// Strip file extension and use file basename path as name
 			if opts.Name == "" {
 				filename := filepath.Base(opts.Path)
-				if before, ok := strings.CutSuffix(filename, ".yaml"); ok {
-					opts.Name = before
-				} else if before, ok := strings.CutSuffix(filename, ".yml"); ok {
-					opts.Name = before
-				} else {
+				switch ext := strings.ToLower(filepath.Ext(filename)); ext {
+				case ".yaml", ".yml":
+					opts.Name = strings.TrimSuffix(filename, ext)
+				default:
 					opts.Name = filename
 				}
 			}
@@ -51,48 +65,56 @@ func BlueprintCmd() *cobra.Command {
 
 			return nil
 		},
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := applyBlueprintMain(cmd, opts); err != nil {
-				os.Exit(1)
+				return err
 			}
+			logger.Info("Successfully applied blueprint!")
+			return nil
 		},
 	}
 
 	cmd.Flags().StringVarP(&opts.Path, "file", "f", "", "Path to blueprint file (required)")
 	cmd.Flags().StringVarP(&opts.Name, "name", "n", "", "Name of blueprint (default: filename, without extension)")
+	cmd.Flags().StringVar(&opts.APIKey, "api-key", "", "Integration API key (<id>.<secret>)")
+	cmd.Flags().StringVar(&opts.Endpoint, "endpoint", "", "Integration API host URL (required with --api-key, e.g. https://pangolin-api.example.com)")
+	cmd.Flags().StringVar(&opts.OrgID, "org", "", "Organization ID (required with --api-key)")
 	cmd.MarkFlagRequired("file")
 
 	return cmd
 }
 
 func applyBlueprintMain(cmd *cobra.Command, opts BlueprintCmdOpts) error {
-	api := api.FromContext(cmd.Context())
+	apiClient := api.FromContext(cmd.Context())
 	accountStore := config.AccountStoreFromContext(cmd.Context())
-
-	account, err := accountStore.ActiveAccount()
-	if err != nil {
-		logger.Error("Error: %v", err)
-		return err
-	}
-
-	if account.OrgID == "" {
-		logger.Error("Error: no organization selected. Run 'pangolin select org' first.")
-		return errors.New("no organization selected")
-	}
 
 	blueprintContents, err := os.ReadFile(opts.Path)
 	if err != nil {
-		logger.Error("Error: failed to read blueprint file: %v", err)
-		return err
+		return fmt.Errorf("failed to read blueprint file: %w", err)
 	}
 
-	_, err = api.ApplyBlueprint(account.OrgID, opts.Name, string(blueprintContents))
+	client := apiClient
+	orgID := opts.OrgID
+
+	if opts.APIKey != "" {
+		client, err = apiClient.WithIntegrationAPIKey(opts.Endpoint, opts.APIKey)
+		if err != nil {
+			return fmt.Errorf("failed to initialize api key client: %w", err)
+		}
+	} else {
+		account, errAcc := accountStore.ActiveAccount()
+		if errAcc != nil {
+			return errAcc
+		}
+		if account.OrgID == "" {
+			return errors.New("no organization selected")
+		}
+		orgID = account.OrgID
+	}
+
+	_, err = client.ApplyBlueprint(orgID, opts.Name, string(blueprintContents))
 	if err != nil {
-		logger.Error("Error: failed to apply blueprint: %v", err)
-		return err
+		return fmt.Errorf("failed to apply blueprint: %w", err)
 	}
-
-	logger.Info("Successfully applied blueprint!")
-
 	return nil
 }
