@@ -30,40 +30,11 @@ func BlueprintCmd() *cobra.Command {
 		Short: "Apply a blueprint",
 		Long:  "Apply a YAML blueprint to the Pangolin server",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if opts.Path == "" {
-				return errors.New("--file is required")
+			// Integration API: any of the three flags implies all three are required (avoids silent session fallback).
+			integration := opts.APIKey != "" || opts.Endpoint != "" || opts.OrgID != ""
+			if integration && (opts.APIKey == "" || opts.Endpoint == "" || opts.OrgID == "") {
+				return errors.New("integration API mode requires --api-key, --endpoint, and --org together; omit all three to use your logged-in session and selected org")
 			}
-
-			// API key mode requires endpoint and org.
-			if opts.APIKey != "" && opts.Endpoint == "" {
-				return errors.New("--endpoint is required when using --api-key (use your Integration API URL, e.g. https://<host>/v1)")
-			}
-			if opts.APIKey != "" && opts.OrgID == "" {
-				return errors.New("--org is required when using --api-key")
-			}
-			if opts.APIKey == "" && opts.OrgID != "" {
-				return errors.New("--org is only supported when using --api-key")
-			}
-
-			if _, err := os.Stat(opts.Path); err != nil {
-				return err
-			}
-
-			// Strip file extension and use file basename path as name
-			if opts.Name == "" {
-				filename := filepath.Base(opts.Path)
-				switch ext := strings.ToLower(filepath.Ext(filename)); ext {
-				case ".yaml", ".yml":
-					opts.Name = strings.TrimSuffix(filename, ext)
-				default:
-					opts.Name = filename
-				}
-			}
-
-			if len(opts.Name) < 1 || len(opts.Name) > 255 {
-				return errors.New("name must be between 1-255 characters")
-			}
-
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -75,17 +46,31 @@ func BlueprintCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&opts.Path, "file", "f", "", "Path to blueprint file (required)")
-	cmd.Flags().StringVarP(&opts.Name, "name", "n", "", "Name of blueprint (default: filename, without extension)")
-	cmd.Flags().StringVar(&opts.APIKey, "api-key", "", "Integration API key (<id>.<secret>)")
-	cmd.Flags().StringVar(&opts.Endpoint, "endpoint", "", "Integration API host URL (required with --api-key, e.g. https://pangolin-api.example.com)")
-	cmd.Flags().StringVar(&opts.OrgID, "org", "", "Organization ID (required with --api-key)")
+	cmd.Flags().StringVarP(&opts.Path, "file", "f", "", "Blueprint YAML file")
+	cmd.Flags().StringVarP(&opts.Name, "name", "n", "", "Blueprint name (default: filename without extension)")
+	cmd.Flags().StringVar(&opts.APIKey, "api-key", "", "Integration API key (id.secret)")
+	cmd.Flags().StringVar(&opts.Endpoint, "endpoint", "", "Integration API host URL")
+	cmd.Flags().StringVar(&opts.OrgID, "org", "", "Organization ID")
 	cmd.MarkFlagRequired("file")
 
 	return cmd
 }
 
 func applyBlueprintMain(cmd *cobra.Command, opts BlueprintCmdOpts) error {
+	name := opts.Name
+	if name == "" {
+		filename := filepath.Base(opts.Path)
+		switch ext := strings.ToLower(filepath.Ext(filename)); ext {
+		case ".yaml", ".yml":
+			name = strings.TrimSuffix(filename, ext)
+		default:
+			name = filename
+		}
+	}
+	if len(name) < 1 || len(name) > 255 {
+		return errors.New("name must be between 1-255 characters")
+	}
+
 	apiClient := api.FromContext(cmd.Context())
 	accountStore := config.AccountStoreFromContext(cmd.Context())
 
@@ -115,7 +100,7 @@ func applyBlueprintMain(cmd *cobra.Command, opts BlueprintCmdOpts) error {
 		orgID = account.OrgID
 	}
 
-	_, err = client.ApplyBlueprint(orgID, opts.Name, string(blueprintContents))
+	_, err = client.ApplyBlueprint(orgID, name, string(blueprintContents))
 	if err != nil {
 		return fmt.Errorf("failed to apply blueprint: %w", err)
 	}
