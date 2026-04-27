@@ -8,9 +8,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VERSION_FILE="${REPO_ROOT}/internal/version/consts.go"
 INSTALLER_WXS="${REPO_ROOT}/pangolin-cli.wxs"
+MAKEFILE_PATH="${REPO_ROOT}/Makefile"
 
 DEFAULT_CLI_VERSION="version_replaceme"
 DEFAULT_INSTALLER_VERSION="0.0.0"
+DEFAULT_MAKEFILE_VERSION="version_replaceme"
 
 cd "$REPO_ROOT"
 
@@ -21,6 +23,11 @@ fi
 
 if [ ! -f "$INSTALLER_WXS" ]; then
   echo "Error: $INSTALLER_WXS not found"
+  exit 1
+fi
+
+if [ ! -f "$MAKEFILE_PATH" ]; then
+  echo "Error: $MAKEFILE_PATH not found"
   exit 1
 fi
 
@@ -51,7 +58,20 @@ else
   exit 1
 fi
 
+echo "Updating $MAKEFILE_PATH..."
+case $(uname) in
+  Darwin) sed -i '' "s/^VERSION[[:space:]]*?=[[:space:]]*.*/VERSION ?= $DEFAULT_MAKEFILE_VERSION/" "$MAKEFILE_PATH" ;;
+  *)      sed -i    "s/^VERSION[[:space:]]*?=[[:space:]]*.*/VERSION ?= $DEFAULT_MAKEFILE_VERSION/" "$MAKEFILE_PATH" ;;
+esac
+if grep -q "^VERSION[[:space:]]*?=[[:space:]]*$DEFAULT_MAKEFILE_VERSION$" "$MAKEFILE_PATH"; then
+  echo "  OK"
+else
+  echo "Error: failed to reset VERSION in $MAKEFILE_PATH"
+  exit 1
+fi
+
 echo ""
 echo "Versions reset:"
 echo "  internal/version/consts.go -> $DEFAULT_CLI_VERSION"
 echo "  pangolin-cli.wxs -> $DEFAULT_INSTALLER_VERSION"
+echo "  Makefile -> $DEFAULT_MAKEFILE_VERSION"

@@ -19,6 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VERSION_FILE="${REPO_ROOT}/internal/version/consts.go"
 INSTALLER_WXS="${REPO_ROOT}/pangolin-cli.wxs"
+MAKEFILE_PATH="${REPO_ROOT}/Makefile"
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9]+)?$ ]]; then
   echo "Warning: Version format may be invalid. Expected format: X.Y.Z or X.Y.Z-suffix"
@@ -40,6 +41,11 @@ fi
 
 if [ ! -f "$INSTALLER_WXS" ]; then
   echo "Error: $INSTALLER_WXS not found"
+  exit 1
+fi
+
+if [ ! -f "$MAKEFILE_PATH" ]; then
+  echo "Error: $MAKEFILE_PATH not found"
   exit 1
 fi
 
@@ -70,7 +76,19 @@ else
   exit 1
 fi
 
+echo "Updating $MAKEFILE_PATH..."
+case $(uname) in
+  Darwin) sed -i '' "s/^VERSION[[:space:]]*?=[[:space:]]*.*/VERSION ?= $VERSION/" "$MAKEFILE_PATH" ;;
+  *)      sed -i    "s/^VERSION[[:space:]]*?=[[:space:]]*.*/VERSION ?= $VERSION/" "$MAKEFILE_PATH" ;;
+esac
+if grep -q "^VERSION[[:space:]]*?=[[:space:]]*$VERSION$" "$MAKEFILE_PATH"; then
+  echo "  OK"
+else
+  echo "Error: failed to update VERSION in $MAKEFILE_PATH"
+  exit 1
+fi
+
 echo ""
-echo "Version updated to $VERSION in internal/version/consts.go and pangolin-cli.wxs"
+echo "Version updated to $VERSION in internal/version/consts.go, pangolin-cli.wxs, and Makefile"
 echo ""
 echo "Next: build the Windows binary, then: scripts\\build-msi.bat"
